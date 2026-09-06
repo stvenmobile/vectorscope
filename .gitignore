@@ -1,0 +1,17 @@
+build
+sdkconfig
+sdkconfig.old
+.vscode
+.devcontainer
+*.code-workspace
+managed_components
+dependencies.lock
+sources/pipeline/secrets.h
+
+# Leftover local artifacts, not part of the project
+.pio
+eim_config.toml
+*.log
+
+# Preserved for reference but not part of the current ESP-IDF project
+arduino_attempt/

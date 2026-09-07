@@ -25,6 +25,18 @@ int g_currentImage = 0;
 
 float g_time = 0;
 
+// Separate from g_time (which keeps the underlying warp-field noise
+// continuously drifting so its shapes don't repeat identically from photo
+// to photo) so a tap can reset just the distortion cycle back to fully
+// clear without also snapping the noise field back to its starting frame.
+float g_cycleTime = 0;
+
+// Screensaver-style auto-advance: time since the current photo was chosen
+// (by touch or by this timer itself), independent of g_cycleTime so a
+// mid-distortion auto-advance still resets to fully clear like a manual tap.
+const float AUTO_ADVANCE_SECONDS = 1800.0f;  // 30 minutes
+float g_autoAdvanceTime = 0;
+
 // Same coarse-grid-plus-bilinear-upscale approach as noise_field, for the
 // same reason: evaluating the warp noise per-pixel (384,000 times/frame)
 // would be far too slow.
@@ -132,6 +144,8 @@ void init(int width, int height) {
     g_width = width;
     g_height = height;
     g_time = 0;
+    g_cycleTime = 0;
+    g_autoAdvanceTime = 0;
 
     buildTintLUT();
     buildSampleTables(width, height);
@@ -149,13 +163,21 @@ void init(int width, int height) {
 
 void update(float dtSeconds) {
     g_time += dtSeconds;
+    g_cycleTime += dtSeconds;
     computeGrids();
 
     if (!g_sourceImage || !g_outputBuf) return;
 
+    g_autoAdvanceTime += dtSeconds;
+    if (g_autoAdvanceTime >= AUTO_ADVANCE_SECONDS) {
+        loadImage(g_currentImage + 1);
+        g_cycleTime = 0.0f;
+        g_autoAdvanceTime = 0.0f;
+    }
+
     // Full clear -> full distortion -> full clear once per cycle.
     const float CYCLE_SECONDS = 180.0f;
-    float phase = fmodf(g_time, CYCLE_SECONDS) / CYCLE_SECONDS;
+    float phase = fmodf(g_cycleTime, CYCLE_SECONDS) / CYCLE_SECONDS;
     float warpAmount = 0.5f - 0.5f * cosf(6.2831853f * phase);  // smooth 0..1..0
 
     const float MAX_DISPLACEMENT_PX = 55.0f;
@@ -236,6 +258,8 @@ void deinit() {
 void onTouch(int x, int y, bool pressed) {
     if (pressed) {
         loadImage(g_currentImage + 1);
+        g_cycleTime = 0.0f;
+        g_autoAdvanceTime = 0.0f;
     }
 }
 

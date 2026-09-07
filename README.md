@@ -23,7 +23,9 @@ forwarded to the current visual instead.
   fully rippled "liquid glass" version of it and back, over about 3 minutes. A subtle
   color drift fades in only while distorted, so the clear moments are always a pristine,
   unaltered view of the source photo. Touching anywhere except the corner hotspot loads
-  the next image found on the card.
+  the next image found on the card and resets the distortion cycle back to fully clear,
+  rather than picking up mid-ripple. It also auto-advances to the next image on its own
+  every 30 minutes, screensaver-style, if left untouched.
 - **Noise Field** - a slowly-drifting, domain-warped noise field rendered as a soft color
   gradient. Fully procedural, no image required.
 - **Kaleidoscope** - a touch-driven kaleidoscope using true triangular-mirror reflection

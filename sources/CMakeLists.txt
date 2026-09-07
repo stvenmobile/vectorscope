@@ -2,9 +2,10 @@ file(GLOB_RECURSE ADAPTERS_SRC "adapters/*.cpp")
 file(GLOB_RECURSE VISUALS_SRC "visuals/*.cpp")
 
 # No WiFi/HTTP/JSON needed on this branch - the noise field is fully
-# self-contained, no network or LLM involved.
+# self-contained, no network or LLM involved. fatfs/sdmmc/driver are for the
+# SD card (image-warp visual's source images).
 idf_component_register(SRCS "main.cpp" ${ADAPTERS_SRC} ${VISUALS_SRC}
-                    REQUIRES spi_flash esp32_display_panel esp_timer lvgl nvs_flash
+                    REQUIRES spi_flash esp32_display_panel esp_timer lvgl nvs_flash fatfs sdmmc driver
                     INCLUDE_DIRS "." "adapters" "visuals")
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-missing-field-initializers)

@@ -1,5 +1,6 @@
 #include "adapters/lvgl/lvgl_port_v8.h"
 #include "adapters/display.h"
+#include "adapters/sdcard.h"
 #include "visuals/registry.h"
 
 #include "i2c_bus.h"
@@ -64,6 +65,13 @@ extern "C" void app_main(void) {
     ESP_UTILS_CHECK_FALSE_EXIT(lvgl_port_init(board->getLCD(), board->getTouch()), "LVGL init failed");
 
     display::init(board->getLCD());
+
+    // Diagnostic only for now (the image-warp visual doesn't exist yet) -
+    // just confirms the card mounts and any .bmp files on it are in the
+    // simple 800x480/24bpp/uncompressed format the eventual loader expects.
+    if (sdcard::init()) {
+        sdcard::listAndValidateImages();
+    }
 
     int visualCount = 0;
     const visuals::Visual* visualList = visuals::all(&visualCount);

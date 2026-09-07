@@ -1,10 +1,11 @@
 #include "adapters/lvgl/lvgl_port_v8.h"
-#include "pipeline/supervisor.h"
-#include "pipeline/renderer.h"
+#include "adapters/display.h"
+#include "visuals/registry.h"
 
 #include "i2c_bus.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -35,8 +36,7 @@ extern "C" void app_main(void) {
     // i2c_bus_create() is unreliable even though it reports ESP_OK - the
     // STC8H1K28 needs a moment after power-on before it's actually ready.
     // Scanning the bus first (like the factory main.cpp does) reliably
-    // gives it that time; skipping this step is what caused the "backlight
-    // write succeeds but screen stays black" issue during bring-up.
+    // gives it that time.
     uint8_t addr_buf[16];
     i2c_bus_scan(i2c_bus, addr_buf, sizeof(addr_buf));
 
@@ -63,30 +63,74 @@ extern "C" void app_main(void) {
     ESP_UTILS_CHECK_FALSE_EXIT(board->begin(), "Board begin failed");
     ESP_UTILS_CHECK_FALSE_EXIT(lvgl_port_init(board->getLCD(), board->getTouch()), "LVGL init failed");
 
-    lv_disp_t* dispp = lv_disp_get_default();
-    lv_theme_t* theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE),
-                                               lv_palette_main(LV_PALETTE_RED), true, LV_FONT_DEFAULT);
-    lv_disp_set_theme(dispp, theme);
+    display::init(board->getLCD());
 
-    renderer::init(800, 480);
-    supervisor::begin();
-    supervisor::requestNewQuery();  // kick off the MVP pipeline immediately
+    int visualCount = 0;
+    const visuals::Visual* visualList = visuals::all(&visualCount);
+    int currentVisual = 0;
+    visualList[currentVisual].init(800, 480);
 
     Touch* touch = board->getTouch();
     bool wasTouched = false;
+    bool hotspotGesture = false;
+    int lastTouchX = 0, lastTouchY = 0;
+    // Top-right corner: tapping here cycles visuals. Anywhere else, touch
+    // is forwarded to the active visual (e.g. kaleidoscope's drag-to-move
+    // center) instead.
+    const int HOTSPOT_SIZE = 60;
+
+    int64_t lastUs = esp_timer_get_time();
+
+    int frameCount = 0;
+    int64_t lastFpsLogUs = lastUs;
 
     while (1) {
-        supervisor::update();
+        int64_t now = esp_timer_get_time();
+        visualList[currentVisual].update((now - lastUs) / 1000000.0f);
+        lastUs = now;
+
+        frameCount++;
+        if (now - lastFpsLogUs >= 2000000) {
+            ESP_LOGI(TAG, "fps: %.1f", frameCount / ((now - lastFpsLogUs) / 1000000.0f));
+            frameCount = 0;
+            lastFpsLogUs = now;
+        }
 
         if (touch) {
             TouchPoint point;
             bool touched = touch->readPoints(&point, 1, 0) > 0;
+
             if (touched && !wasTouched) {
-                supervisor::requestNewQuery();  // trigger only on the rising edge
+                hotspotGesture = (point.x >= 800 - HOTSPOT_SIZE) && (point.y <= HOTSPOT_SIZE);
+                if (hotspotGesture) {
+                    if (visualList[currentVisual].deinit) {
+                        visualList[currentVisual].deinit();
+                    }
+                    currentVisual = (currentVisual + 1) % visualCount;
+                    visualList[currentVisual].init(800, 480);
+                    ESP_LOGI(TAG, "Switched to visual: %s", visualList[currentVisual].name);
+                }
             }
+
+            if (touched && !hotspotGesture) {
+                lastTouchX = point.x;
+                lastTouchY = point.y;
+                if (visualList[currentVisual].onTouch) {
+                    visualList[currentVisual].onTouch(lastTouchX, lastTouchY, true);
+                }
+            } else if (!touched && wasTouched && !hotspotGesture) {
+                if (visualList[currentVisual].onTouch) {
+                    visualList[currentVisual].onTouch(lastTouchX, lastTouchY, false);
+                }
+            }
+
             wasTouched = touched;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Not a target frame rate - just a minimal yield. The actual frame
+        // rate is bounded by how long the visual's own compute+draw takes
+        // (and, underneath that, by the panel's ~16MHz pixel clock, which
+        // caps full-screen refresh around ~39Hz regardless of CPU speed).
+        vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
